@@ -7,6 +7,8 @@ import websocketProxyServer from './util/websocketProxyServer';
 import webhookServer from './util/webhookServer';
 import wechatServer from './util/wechatServer';
 import isWindows from 'is-windows';
+var kill = require('tree-kill')
+// var killPort = require('killport2');
 
 const isWin = isWindows();
 
@@ -23,11 +25,11 @@ function showHelp() {
         '',
         'options:',
         '  --start-cmd "exec"     应用启动运行命令，例如 "mvn spring-boot:run"、"npm start" 等  ,前后必须加上双引号，该参数必须填写',
-        '  --stop-cmd "exec"      停止应用命令， 例如 "tomcat stop"、"ps -ef | grep java | kill -9"',
-        '  --cwd path             工作目录，默认当前目录',
+        // '  --stop-cmd "exec"      停止应用命令， 例如 "tomcat stop"、"ps -ef | grep java | kill -9"',
+        // '  --cwd path             工作目录，默认当前目录',
         '  --pa  wsAddress        跳板服务器的地址（ws(s)://域名:端口） websocket 地址',
         '  --a host               webhook 侦听的域名 默认 0.0.0.0',
-        '  --p port               webhook 侦听的端口 默认 80',
+        '  --p port               webhook 侦听的端口 默认 8008',
         '  --wechat-server url    微信服务器地址 ',
         '  -h --help              Print this list and exit.',
 
@@ -39,7 +41,7 @@ if (argv.h || argv.help) {
     showHelp();
 }
 
-const port = argv.p || parseInt(process.env.PORT, 10) || 8008,
+const port = argv.p || parseInt(process.env.CTRL_PORT, 10) || 8008,
     cwdPath = argv.cwd || process.cwd(),
     host = argv.a || '0.0.0.0',
     serverStartCmd = argv['start-cmd'],
@@ -76,6 +78,7 @@ let stopingPromise = null;
 let p;
 let webhookServerCtl;
 let wechatCtl;
+let nginxP;
 
 async function start() {
     if (stopingPromise) {
@@ -96,22 +99,64 @@ async function start() {
     // return p;
 }
 
-async function exec(shell, id) {
-    if (stopingPromise) {
-        await stopingPromise;
-    }
-    let p2 = fork(`${__dirname}/util/startAppServer`, [shell], {silent: true});
-    p2.stdout.on('data', (chunk) => {
-	  webhookServerCtl.boardcast('exec', id, chunk.toString());
-	});
-	p2.on('close', (code) => {
-	  webhookServerCtl.boardcast('exec:exit', id, code);
-	});
-	p2.stderr.on('data', (chunk) => {
-	  webhookServerCtl.boardcast('exec:err', id, chunk.toString());
-	});
-    console.log("执行命令：" + shell);
+// mkdir -p dist_history && tar cvf dist_history/dist_`date +%Y%m%d%H%M%S`.tar dist
 
+async function startNginx() {
+    if(nginxP){
+        await (new Promise((resolve, reject) => {
+            kill(nginxP.pid, 'SIGKILL', function(err) {
+                nginxP = null;                        
+                if(err){
+                    reject(err);
+                }else{
+                    console.log("停止服务完成");
+                    resolve();
+                }
+            });
+        }));
+        nginxP = null;
+    }
+    nginxP = fork(`${__dirname}/util/nginx`,[''] , {silent: false});
+	global.nginxP = nginxP;
+    console.log("代理应用启动成功");
+    // p.stdout.on('data', (chunk) => {
+	//   webhookServerCtl.boardcast('start', null, chunk.toString());
+	// });
+	// p.stderr.on('data', (chunk) => {
+	//   webhookServerCtl.boardcast('start:err', null, chunk.toString());
+	// });
+	// p.on('close', (code) => {
+	//   webhookServerCtl.boardcast('start:exit', null, code);
+	// });
+    // return p;
+}
+let execRunedMap = {}
+async function exec(shell, id) {
+    if (execRunedMap[shell]) {
+        await execRunedMap[shell];
+    }
+    execRunedMap[shell] = new Promise((resolve, reject) => {
+        console.log("执行命令：" + shell);    
+        let p2 = fork(`${__dirname}/util/startAppServer`, [shell], {silent: true});
+        p2.stdout.on('data', (chunk) => {
+            webhookServerCtl.boardcast('exec', id, chunk.toString());
+        });
+        p2.on('close', (code) => {
+            if(execRunedMap[shell]){
+                delete execRunedMap[shell];
+                resolve(code);
+            }
+            webhookServerCtl.boardcast('exec:exit', id, code);
+        });
+        p2.stderr.on('data', (chunk) => {
+            if(execRunedMap[shell]){
+                delete execRunedMap[shell];
+                reject(chunk);
+            }
+            webhookServerCtl.boardcast('exec:err', id, chunk.toString());
+        });
+    });
+    return (await execRunedMap[shell]);
     // p.
     // webhookServerCtl.boardcast("执行命令：" + shell);
 }
@@ -127,24 +172,18 @@ async function stop() {
     } else {
         if (!stopingPromise) {
             stopingPromise = new Promise((resolve, reject) => {
-                if (curP.connected) {
-                    if (isWin) {
-                        shelljs.exec("taskkill.exe /F /T /PID " + curP.pid);
-                    } else {
-                        shelljs.exec("kill -9 " + curP.pid);
+                kill(curP.pid, 'SIGKILL', function(err) {
+                    stopingPromise = null;                        
+                    if(err){
+                        reject(err);
+                    }else{
+                        console.log("停止服务完成");
+                        resolve();
                     }
-                }
-                setTimeout(() => {
-                    if (curP.connected) {
-                        curP.kill();
-                    }
-                    stopingPromise = null;
-                    console.log("停止服务完成");
-                    resolve();
-                }, 2000);
+                });
             });
         }
-        return Promise.resolve({});
+        return stopingPromise;
     }
 }
 
@@ -165,6 +204,10 @@ async function pull() {
     // shelljs.exec(`git checkout ${branch}`);
     shelljs.exec(`git pull origin ${branch} --force`);
 }
+
+// async function build() {
+//     shelljs.exec('mkdir -p dist_history && tar cvf dist_history/dist_`date +%Y%m%d%H%M%S`.tar dist && npm run build');
+// }
 
 
 if (wechatServerUrl) {
@@ -198,5 +241,29 @@ if (proxyAddress) {
 }
 
 
-start();
-console.log(`webhook启动完成，控制台请访问： http://${host==='0.0.0.0' ? 'localhost' : host}:${port}/index.html`);
+Promise.all([start(), startNginx()]).then(()=>{
+    console.log(`webhook启动完成，控制台请访问： http://${host==='0.0.0.0' ? 'localhost' : host}:${port}/`);
+});
+
+const clean = function () {
+    stop();
+    if (!nginxP.killed) {
+        kill(nginxP.pid, 'SIGKILL');
+    }
+    shelljs.exec(`./node_modules/.bin/killport ${port}`);
+  }
+
+  process.on('exit', function () {
+    try {
+      clean();
+    } catch (e) {
+    }
+  });
+
+  process.on('SIGINT', function () {
+    try {
+      clean();
+    } catch (e) {
+    }
+    // process.exit(0);
+  });

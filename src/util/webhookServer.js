@@ -1,6 +1,7 @@
 const Koa = require('koa');
 const path = require('path');
 const serve = require('koa-static');
+const proxy = require('koa-proxy');
 const route = require('koa-route');
 const bodyParser = require('koa-bodyparser');
 const websockify = require('koa-websocket');
@@ -15,12 +16,26 @@ export default function(args) {
         branch,
     } = args;
 
-    const PORT = args.port || process.env.PORT || 8008;
+    const PORT = args.port;
     const { cmder } = args;
     const app = websockify(new Koa());
     // const app = new Koa();
 
     app.use(bodyParser());
+
+    if( process.env.WEBHOOK_DEV ){
+        app.use(proxy({
+            host:  'http://127.0.0.1:9898', // proxy alicdn.com...
+            // match: /^\/static\//        // ...just the /static folder
+        }));
+    } else {
+        // app.use(serve(path.join(__dirname, '../../boilerplate/dist')));
+        app.use(serve(path.join(__dirname, '../public')));
+        // app.use(proxy({
+        //     host:  'http://127.0.0.1:9898', // proxy alicdn.com...
+        //     // match: /^\/static\//        // ...just the /static folder
+        // }));
+    }
 
     app.use(async(ctx, next) => {
 
@@ -113,8 +128,6 @@ ${diffMsg}
         await next();
 
     });
-
-    app.use(serve(path.join(__dirname, '../public')));
 
     const redirect = ctx => {
         ctx.response.redirect('/index.html');

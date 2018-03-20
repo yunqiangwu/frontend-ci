@@ -3,7 +3,7 @@ var http = require('http'),
     httpProxy = require('http-proxy');
 
 const proPort = parseInt(process.env.PRODUCT_PORT, 10) || 8009;
-const devPort = parseInt(process.env.PORT, 10) || 8000;
+const devPort = parseInt(process.env.PORT, 10) || 8007;
 const ctrlPort = parseInt(process.env.CTRL_PORT, 10) || 8008;
 // 
 // Setup our server to proxy standard HTTP requests 

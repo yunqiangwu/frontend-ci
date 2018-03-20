@@ -8,6 +8,8 @@ import webhookServer from './util/webhookServer';
 import wechatServer from './util/wechatServer';
 import isWindows from 'is-windows';
 var kill = require('tree-kill')
+var path = require('path');
+
 // var killPort = require('killport2');
 
 const isWin = isWindows();
@@ -250,7 +252,7 @@ const clean = function () {
     if (!nginxP.killed) {
         kill(nginxP.pid, 'SIGKILL');
     }
-    shelljs.exec(`./node_modules/.bin/killport ${port}`);
+    shelljs.exec(`${path.join(__dirname, '../node_modules/.bin/killport')} ${port}`);
   }
 
   process.on('exit', function () {

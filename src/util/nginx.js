@@ -20,12 +20,23 @@ var ctrlProxy = new httpProxy.createProxyServer({
         port: ctrlPort
     }
 });
-// var devProxy = new httpProxy.createProxyServer({
-//     target: {
-//         host: '127.0.0.1',
-//         port: devPort
-//     }
-// });
+// console.log(32);
+devProxy.on('error', function (err, req, res) {
+    res.writeHead(500, {
+        'Content-Type': 'text/plain'
+    });
+
+    res.end('Something went wrong. And we are reporting a custom error message.');
+});
+
+ctrlProxy.on('error', function (err, req, res) {
+    res.writeHead(500, {
+        'Content-Type': 'text/plain'
+    });
+
+    res.end('Something went wrong. And we are reporting a custom error message.');
+});
+
 var file = new nodeStatic.Server('./dist');
 var proxyServer = http.createServer(function (req, res) {
     let host = req.host || req.headers.host;

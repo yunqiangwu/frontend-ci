@@ -1,7 +1,7 @@
 {
   "name": "frontend-ci",
   "description": "auto pull and robot of weixin qq and  auto restart deploy server",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "main": "lib/index.js",
   "author": "yunqiangwu",
   "repository": "yunqiangwu/frontend-ci",

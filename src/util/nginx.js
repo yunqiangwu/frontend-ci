@@ -54,6 +54,7 @@ var proxyServer = http.createServer(function (req, res) {
             file.serve(req, res);
         }).resume();
     }else{
+        console.log(host);
         devProxy.web(req, res);
     }
 });
@@ -70,6 +71,7 @@ proxyServer.on('upgrade', function (req, socket, head) {
     }else if(host.startsWith('dev.')){
         devProxy.ws(req, socket, head);
     }else{
+        // console.log(host);        
         devProxy.ws(req, socket, head);
     }
 });
